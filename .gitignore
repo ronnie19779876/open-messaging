@@ -39,6 +39,7 @@ out
 gen/
 target/
 local.properties
+security.password
 
 #MacOS files
 .DS_Store
