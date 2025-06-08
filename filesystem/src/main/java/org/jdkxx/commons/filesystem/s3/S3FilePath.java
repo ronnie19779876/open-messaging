@@ -1,10 +1,12 @@
 package org.jdkxx.commons.filesystem.s3;
 
+import org.apache.commons.lang3.StringUtils;
 import org.jdkxx.commons.filesystem.AbstractFilePath;
 import org.jdkxx.commons.filesystem.FilePath;
 import org.jdkxx.commons.filesystem.config.Messages;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -19,14 +21,17 @@ import java.util.Set;
 
 public class S3FilePath extends AbstractFilePath {
     private final S3FileSystem fs;
+    private final String bucket;
 
-    public S3FilePath(S3FileSystem fs, String path) {
-        this(fs, path, false);
+    public S3FilePath(S3FileSystem fs, String path, String bucket) {
+        this(fs, path, false, bucket);
     }
 
-    private S3FilePath(S3FileSystem fs, String path, boolean normalized) {
+    private S3FilePath(S3FileSystem fs, String path, boolean normalized, String bucket) {
         super(path, normalized);
         this.fs = Objects.requireNonNull(fs);
+        this.bucket = bucket;
+        initOffsets();
     }
 
     @Override
@@ -36,7 +41,13 @@ public class S3FilePath extends AbstractFilePath {
 
     @Override
     public Path getRoot() {
-        return fs.getRoot();
+        String path = this.path();
+        if (offsets.length > 1) {
+            path = StringUtils.substring(path, offsets[0], offsets[1]);
+        } else if (offsets.length == 0) {
+            path = File.separator;
+        }
+        return new S3FilePath(fs, path, false, bucket);
     }
 
     @Override
@@ -53,31 +64,25 @@ public class S3FilePath extends AbstractFilePath {
         if (parent == null) {
             return createPath("");
         }
-        try {
-            Path directory = createPath(parent.path());
-            directory = directory.resolve(fs.getSeparator());
-            if (((S3FilePath) directory).isDirectory()) {
-                return directory;
-            }
-        } catch (IOException ex) {
-            throw new IllegalArgumentException(ex);
-        }
-        return parent;
+        Path directory = createPath(parent.path());
+        directory = directory.resolve(File.separator);
+        return directory;
     }
 
     @Override
     public @NotNull URI toUri() {
-        return fs.toUri(this);
+        String path = String.format("%s%s%s", this.bucket, File.separator, this.path());
+        return fs.toUri(path);
     }
 
     @Override
     public @NotNull Path toAbsolutePath() {
-        return fs.toAbsolutePath(this);
+        return new S3FilePath(fs, this.path(), false, bucket);
     }
 
     @Override
-    public @NotNull Path toRealPath(@NotNull LinkOption... options) throws IOException {
-        return fs.toRealPath(this, options);
+    public @NotNull Path toRealPath(@NotNull LinkOption @NotNull ... options) throws IOException {
+        return toAbsolutePath();
     }
 
     @Override
@@ -89,7 +94,26 @@ public class S3FilePath extends AbstractFilePath {
 
     @Override
     protected FilePath createPath(String path) {
-        return new S3FilePath(fs, path, true);
+        return new S3FilePath(fs, path, false, bucket);
+    }
+
+    @Override
+    public boolean isAbsolute() {
+        return true;
+    }
+
+    @Override
+    public @NotNull Path relativize(@NotNull Path other) {
+        throw Messages.unsupportedOperation(Path.class, "relativize");
+    }
+
+    @Override
+    public @NotNull Path normalize() {
+        throw Messages.unsupportedOperation(Path.class, "normalize");
+    }
+
+    String bucket() {
+        return bucket;
     }
 
     boolean isSameFile(Path other) throws IOException {

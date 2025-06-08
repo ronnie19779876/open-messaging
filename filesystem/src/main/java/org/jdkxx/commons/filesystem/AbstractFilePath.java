@@ -3,6 +3,7 @@ package org.jdkxx.commons.filesystem;
 import org.jdkxx.commons.filesystem.config.Messages;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.ProviderMismatchException;
 import java.util.ArrayDeque;
@@ -15,7 +16,7 @@ public abstract class AbstractFilePath extends FilePath {
     private final String path;
 
     /* The offsets in the full path of all the separate name elements. */
-    private int[] offsets;
+    protected int[] offsets;
 
     protected AbstractFilePath(String path, boolean normalized) {
         Objects.requireNonNull(path);
@@ -24,40 +25,40 @@ public abstract class AbstractFilePath extends FilePath {
 
     @Override
     public boolean isAbsolute() {
-        return path.startsWith(getFileSystem().getSeparator());
+        return path.startsWith(File.separator);
     }
 
     @Override
     public Path getRoot() {
-        return isAbsolute() ? createPath(getFileSystem().getSeparator()) : null;
+        return isAbsolute() ? createPath(File.separator) : null;
     }
 
     @Override
     public Path getParent() {
-        initOffsets();
         String parentPath = parentPath();
         return parentPath != null ? createPath(parentPath) : null;
     }
 
     @Override
+    public @NotNull Path resolve(@NotNull String other) {
+        return resolve(createPath(other));
+    }
+
+    @Override
     public int getNameCount() {
-        initOffsets();
         return offsets.length;
     }
 
     @Override
     public @NotNull Path subpath(int beginIndex, int endIndex) {
-        initOffsets();
         if (beginIndex < 0 || beginIndex >= offsets.length
                 || endIndex <= beginIndex || endIndex > offsets.length) {
             throw Messages.invalidRange(beginIndex, endIndex);
         }
         final int begin = begin(beginIndex);
-        final int end = end(endIndex - 1);
-        String subpath = path.substring(begin, end);
-        if (subpath.endsWith("/")) {
-            subpath = subpath.substring(0, subpath.length() - 1);
-        }
+        int end = end(endIndex - 1);
+        end = end < path.length() ? end + 1 : end;
+        String subpath = path.substring(begin - 1, end);
         return createPath(subpath);
     }
 
@@ -128,15 +129,14 @@ public abstract class AbstractFilePath extends FilePath {
                 nonParentCount++;
             }
         }
-        String separator = getFileSystem().getSeparator();
         StringBuilder sb = new StringBuilder(path.length());
         if (isAbsolute()) {
-            sb.append(separator);
+            sb.append(File.separator);
         }
         for (Iterator<String> i = nameElements.iterator(); i.hasNext(); ) {
             sb.append(i.next());
             if (i.hasNext()) {
-                sb.append(separator);
+                sb.append(File.separator);
             }
         }
         return createPath(sb.toString());
@@ -144,19 +144,15 @@ public abstract class AbstractFilePath extends FilePath {
 
     @Override
     public @NotNull Path resolve(@NotNull Path other) {
-        String separator = getFileSystem().getSeparator();
         final AbstractFilePath that = checkPath(other);
-        if (path.isEmpty() || that.isAbsolute()) {
-            return that;
-        }
         if (that.path.isEmpty()) {
             return this;
         }
         final String resolvedPath;
-        if (path.endsWith(separator) || that.path.equals(separator)) {
+        if (path.endsWith(File.separator) || that.path.equals(File.separator)) {
             resolvedPath = path + that.path;
         } else {
-            resolvedPath = path + separator + that.path;
+            resolvedPath = path + File.separator + that.path;
         }
         return createPath(resolvedPath);
     }
@@ -260,7 +256,6 @@ public abstract class AbstractFilePath extends FilePath {
     }
 
     private String nameAt(int index) {
-        initOffsets();
         if (index < 0 || index >= offsets.length) {
             throw Messages.invalidIndex(index);
         }
@@ -289,7 +284,6 @@ public abstract class AbstractFilePath extends FilePath {
     }
 
     private String parentPath() {
-        initOffsets();
         final int count = offsets.length;
         if (count == 0) {
             return null;
@@ -303,7 +297,7 @@ public abstract class AbstractFilePath extends FilePath {
     }
 
     private String rootPath() {
-        return isAbsolute() ? getFileSystem().getSeparator() : null;
+        return isAbsolute() ? File.separator : null;
     }
 
     private String normalize(String path) {
@@ -326,14 +320,13 @@ public abstract class AbstractFilePath extends FilePath {
         return sb.toString();
     }
 
-    private synchronized void initOffsets() {
+    protected synchronized void initOffsets() {
         if (offsets == null) {
-            String separator = getFileSystem().getSeparator();
             String path = this.path;
-            if (path.endsWith(separator)) {
+            if (path.endsWith(File.separator)) {
                 path = path.substring(0, path.length() - 1);
             }
-            if (separator.equals(path)) {
+            if (File.separator.equals(path)) {
                 offsets = new int[0];
                 return;
             }
@@ -341,7 +334,7 @@ public abstract class AbstractFilePath extends FilePath {
             // At least one result for non-root paths
             int count = 1;
             int start = isAbsolute ? 1 : 0;
-            while ((start = path.indexOf(separator, start)) != -1) {
+            while ((start = path.indexOf(File.separator, start)) != -1) {
                 count++;
                 start++;
             }
@@ -349,7 +342,7 @@ public abstract class AbstractFilePath extends FilePath {
             start = isAbsolute ? 1 : 0;
             int index = 0;
             result[index++] = start;
-            while ((start = path.indexOf(separator, start)) != -1) {
+            while ((start = path.indexOf(File.separator, start)) != -1) {
                 start++;
                 result[index++] = start;
             }

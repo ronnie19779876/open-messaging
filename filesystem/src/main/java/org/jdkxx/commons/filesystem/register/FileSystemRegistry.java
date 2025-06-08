@@ -1,11 +1,8 @@
 package org.jdkxx.commons.filesystem.register;
 
-import com.jcraft.jsch.Proxy;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jdkxx.commons.filesystem.config.FileSystemConfiguration;
-import org.jdkxx.commons.filesystem.config.options.FileSystemOptions;
-import org.jdkxx.commons.filesystem.pool.PoolConfig;
 import org.jdkxx.commons.lang.ClassUtils;
 
 import java.io.File;
@@ -19,42 +16,38 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.jdkxx.commons.filesystem.config.options.FileSystemOptions.*;
-
 @Slf4j
 public class FileSystemRegistry implements AutoCloseable {
     private final Map<URI, FileSystem> fileSystems = new ConcurrentHashMap<>(3);
-    private final FileSystemConfiguration configuration;
 
-    private FileSystemRegistry(FileSystemConfiguration configuration) {
-        this.configuration = configuration;
+    private FileSystemRegistry() {
     }
 
-    private void register(ClassLoader classLoader) throws IOException {
+    public FileSystemRegistry register(FileSystemConfiguration configuration) throws IOException {
         Objects.requireNonNull(configuration, "configuration must not be null");
-        URI uri = configuration.getURI();
-        FileSystem fs = FileSystems.newFileSystem(uri, configuration.getEnvironment(), classLoader);
-        if (fs != null) {
-            fileSystems.put(configuration.getURIWithUsername(), fs);
+        URI uri = configuration.getURIWithUsername();
+        if (!fileSystems.containsKey(uri)) {
+            FileSystem fs = FileSystems.newFileSystem(configuration.getURI(), configuration.getEnvironment(),
+                    ClassUtils.getDefaultClassLoader());
+            if (fs != null) {
+                fileSystems.put(uri, fs);
+            }
         }
+        return this;
     }
 
-    public Path resolve(URI uri) throws URISyntaxException {
+    public Path getPath(URI uri) throws URISyntaxException {
         String scheme = uri.getScheme();
-        if (StringUtils.equalsIgnoreCase(scheme, "s3") || StringUtils.equalsIgnoreCase(scheme, "s3a")) {
+        if (StringUtils.equalsIgnoreCase(scheme, "s3")
+                || StringUtils.equalsIgnoreCase(scheme, "s3a")
+                || StringUtils.equalsIgnoreCase(scheme, "oss")) {
             scheme = "s3";
         }
         String userInfo = uri.getUserInfo();
-        String bucket;
-        if (StringUtils.isNotBlank(userInfo)) {
-            bucket = getBucket(uri.getPath());
-        } else if (StringUtils.isBlank(userInfo) && StringUtils.isBlank(uri.getHost())) {
+        if (StringUtils.isBlank(userInfo) && StringUtils.isBlank(uri.getHost())) {
             userInfo = getUserInfo(uri.getAuthority());
-            bucket = getBucket(uri.getPath());
-        } else {
-            bucket = uri.getHost();
         }
-
+        String bucket = getBucket(uri);
         for (URI key : fileSystems.keySet()) {
             if (StringUtils.equalsIgnoreCase(scheme, key.getScheme()) &&
                     (StringUtils.equalsIgnoreCase(bucket, getBucket(key.getPath())) ||
@@ -63,21 +56,34 @@ public class FileSystemRegistry implements AutoCloseable {
                         key.getUserInfo(),
                         key.getHost(),
                         key.getPort(),
-                        getPath(uri.getPath(), bucket),
+                        getFullPath(uri, bucket),
                         null,
-                        null);
+                        bucket);
                 return Paths.get(fact);
             }
         }
         throw new URISyntaxException(uri.toString(), "No registered FileSystem found for " + uri);
     }
 
+    private String getBucket(URI uri) {
+        String userInfo = uri.getUserInfo();
+        if (StringUtils.isNotBlank(uri.getFragment())) {
+            return uri.getFragment();
+        } else if (StringUtils.isNotBlank(userInfo)) {
+            return getBucket(uri.getPath());
+        } else if (StringUtils.isBlank(userInfo) && StringUtils.isBlank(uri.getHost())) {
+            return getBucket(uri.getPath());
+        } else {
+            return uri.getHost();
+        }
+    }
+
     private String getBucket(String path) {
         if (StringUtils.startsWith(path, File.separator)) {
-            path = path.substring(1);
+            path = StringUtils.substringAfter(path, File.separator);
         }
         String[] split = StringUtils.split(path, File.separator);
-        if (split.length > 0) {
+        if (split != null && split.length > 0) {
             return split[0];
         }
         return null;
@@ -85,125 +91,37 @@ public class FileSystemRegistry implements AutoCloseable {
 
     private String getUserInfo(String authority) {
         String[] split = StringUtils.split(authority, "@");
-        if (split.length > 0) {
+        if (split != null && split.length > 0) {
             return split[0];
         }
         return null;
     }
 
-    private String getPath(String path, String bucket) {
+    public String getFullPath(URI source, String bucket) {
+        String path = source.getPath();
         List<String> token = new ArrayList<>();
         String[] parts = StringUtils.split(path, File.separator);
-        for (String part : parts) {
-            if (StringUtils.isNotBlank(part) && !StringUtils.equalsIgnoreCase(part, bucket)) {
-                token.add(part);
-            }
+        Arrays.stream(parts)
+                .filter(part -> !StringUtils.equalsIgnoreCase(part, bucket))
+                .forEach(token::add);
+        String result = StringUtils.join(token, File.separator);
+        if (!StringUtils.startsWith(result, File.separator)) {
+            result = File.separator + result;
         }
-        token.add(0, "");
         if (StringUtils.endsWith(path, File.separator)) {
-            token.add("");
+            result += File.separator;
         }
-        return StringUtils.join(token, File.separator);
+        return result;
     }
 
-    public static Builder builder(String scheme) {
-        return new Builder(scheme);
+    public static FileSystemRegistry create() {
+        return new FileSystemRegistry();
     }
 
     @Override
     public void close() throws Exception {
         for (FileSystem fileSystem : fileSystems.values()) {
             fileSystem.close();
-        }
-    }
-
-    public static class Builder {
-        private final FileSystemConfiguration configuration;
-
-        Builder(String scheme) {
-            configuration = new FileSystemConfiguration(scheme);
-        }
-
-        public Builder withHost(String host) {
-            configuration.set(FileSystemOptions.HOST, host);
-            return this;
-        }
-
-        public Builder withPort(int port) {
-            configuration.set(FileSystemOptions.PORT, port);
-            return this;
-        }
-
-        public Builder withUsername(String username) {
-            configuration.set(USERNAME, username);
-            return this;
-        }
-
-        public Builder withPassword(char[] password) {
-            configuration.set(PASSWORD, String.valueOf(password));
-            return this;
-        }
-
-        public Builder withConnectTimeout(int timeout) {
-            configuration.set(CONNECT_TIMEOUT, timeout);
-            return this;
-        }
-
-        public Builder withTimeout(int timeout) {
-            configuration.set(TIMEOUT, timeout);
-            return this;
-        }
-
-        public Builder withIdentity(String identity) {
-            configuration.set(IDENTITIES, identity);
-            return this;
-        }
-
-        public Builder withKnownHosts(String knownHosts) {
-            configuration.set(KNOWN_HOSTS, knownHosts);
-            return this;
-        }
-
-        public Builder withPoolConfig(PoolConfig config) {
-            configuration.set(POOL_CONFIG, config);
-            return this;
-        }
-
-
-        public Builder withProxy(Proxy proxy) {
-            configuration.set(PROXY, proxy);
-            return this;
-        }
-
-        public Builder withProperties(Properties properties) {
-            if (properties != null) {
-                Map<String, String> map = new HashMap<>();
-                properties.forEach((key, value) -> map.put(String.valueOf(key), String.valueOf(value)));
-                configuration.set(CONFIG, map);
-            }
-            return this;
-        }
-
-        public Builder withBucket(String bucket) {
-            configuration.set(BUCKET, bucket);
-            return this;
-        }
-
-        public Builder withDefaultDirectory(String path) {
-            configuration.set(DEFAULT_DIR, path);
-            return this;
-        }
-
-        public Builder withProtocol(String protocol) {
-            configuration.set(PROTOCOL, protocol);
-            return this;
-        }
-
-        public FileSystemRegistry build() throws IOException {
-            ClassLoader classLoader = ClassUtils.getDefaultClassLoader();
-            FileSystemRegistry registry = new FileSystemRegistry(configuration);
-            registry.register(classLoader);
-            return registry;
         }
     }
 }

@@ -1,12 +1,14 @@
 package org.jdkxx.commons.filesystem.s3;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.jdkxx.commons.filesystem.FileSystems;
 import org.jdkxx.commons.filesystem.utils.URISupport;
 import org.jdkxx.commons.filesystem.config.FileSystemEnvironment;
 import org.jdkxx.commons.filesystem.config.Messages;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -101,7 +103,22 @@ public class S3FileSystemProvider extends FileSystemProvider {
     public @NotNull Path getPath(@NotNull URI uri) {
         checkURI(uri, true, true);
         FileSystem fs = getExistingFileSystem(uri);
-        return fs.getPath(uri.getPath());
+        String path = uri.getPath();
+        if (path.startsWith(File.separator)) {
+            path = path.substring(1);
+        }
+
+        String bucket;
+        if (StringUtils.isNoneBlank(uri.getFragment())) {
+            bucket = uri.getFragment();
+        } else {
+            int pos = path.indexOf(File.separator);
+            bucket = path.substring(0, pos);
+        }
+        if (StringUtils.startsWithIgnoreCase(path, bucket)) {
+            path = path.substring(bucket.length() + 1);
+        }
+        return fs.getPath(path, bucket);
     }
 
     @Override
@@ -219,9 +236,9 @@ public class S3FileSystemProvider extends FileSystemProvider {
         if (uri.getQuery() != null && !uri.getQuery().isEmpty()) {
             throw Messages.uri().hasQuery(uri);
         }
-        if (uri.getFragment() != null && !uri.getFragment().isEmpty()) {
-            throw Messages.uri().hasFragment(uri);
-        }
+        //if (uri.getFragment() != null && !uri.getFragment().isEmpty()) {
+        //    throw Messages.uri().hasFragment(uri);
+        //}
     }
 
     private static final class AttributeView implements AclFileAttributeView, PosixFileAttributeView {

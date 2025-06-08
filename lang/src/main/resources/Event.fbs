@@ -1,0 +1,13 @@
+namespace org.jdkxx.commons.events.model;
+
+enum Type:byte { READ = 0, INSERT = 1, UPDATE = 2, DELETE = 3, DDL = 4 }
+
+table Event {
+    type:Type = READ;
+    source:EventSource;
+    body:[byte];
+}
+
+table EventSource {
+    source:string;
+}

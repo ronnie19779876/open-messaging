@@ -39,11 +39,6 @@ public abstract class FilePath implements Path {
     }
 
     @Override
-    public @NotNull Path resolve(@NotNull String other) {
-        return resolve(getFileSystem().getPath(other));
-    }
-
-    @Override
     public @NotNull Path resolveSibling(@NotNull Path other) {
         Objects.requireNonNull(other);
         Path parent = getParent();

@@ -69,6 +69,10 @@ limitations under the License.
         <snakeyaml-engine.version>2.8</snakeyaml-engine.version>
         <guava.version>33.3.0-jre</guava.version>
         <jackson.version>2.17.1</jackson.version>
+        <flatbuffers.version>25.2.10</flatbuffers.version>
+        <flatbuffers-grpc.version>2.0.3</flatbuffers-grpc.version>
+        <grpc-core.version>1.68.2</grpc-core.version>
+        <javax.annotation-api.version>1.3.2</javax.annotation-api.version>
     </properties>
 
     <dependencyManagement>
@@ -169,6 +173,38 @@ limitations under the License.
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
+            </dependency>
+
+            <!-- Memory Efficient Serialization Library -->
+            <dependency>
+                <groupId>com.google.flatbuffers</groupId>
+                <artifactId>flatbuffers-java</artifactId>
+                <version>${flatbuffers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.flatbuffers</groupId>
+                <artifactId>flatbuffers-java-grpc</artifactId>
+                <version>${flatbuffers-grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-core</artifactId>
+                <version>${grpc-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-netty</artifactId>
+                <version>${grpc-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-stub</artifactId>
+                <version>${grpc-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.annotation</groupId>
+                <artifactId>javax.annotation-api</artifactId>
+                <version>${javax.annotation-api.version}</version>
             </dependency>
 
             <!-- sub projects -->
