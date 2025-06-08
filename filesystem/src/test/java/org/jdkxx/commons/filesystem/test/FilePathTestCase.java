@@ -42,8 +42,6 @@ public class FilePathTestCase {
 
     @Test
     public void test_getParent() throws Exception {
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@/filesystem/images/header1.jpg");
         URI uri = URI.create("s3://filesystem/images/header1.jpg");
         Path file = registry.getPath(uri);
         Path parent = file.getParent();
@@ -53,8 +51,6 @@ public class FilePathTestCase {
 
     @Test
     public void test_subpath() throws Exception {
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@/filesystem/images/header1.jpg");
         URI uri = URI.create("s3://filesystem/images/header1.jpg");
         Path file = registry.getPath(uri);
         Path subpath = file.subpath(0, 2);
@@ -63,8 +59,6 @@ public class FilePathTestCase {
 
     @Test
     public void test_iterator() throws Exception {
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@/filesystem/images/header1.jpg");
         URI uri = URI.create("s3://filesystem/images/header1.jpg");
         Path file = registry.getPath(uri);
         file.iterator().forEachRemaining(path -> log.info("element: {}", path));
@@ -76,8 +70,6 @@ public class FilePathTestCase {
                 resource.get(SecurityOptions.S3_USERNAME), resource.get(SecurityOptions.S3_HOSTNAME),
                 resource.get(SecurityOptions.S3_PORT), "filesystem/images/header1.jpg");
         URI uri = URI.create(location);
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/images/header1.jpg#filesystem");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg#filesystem");
         Path path = Paths.get(uri);
         log.info("path to URI is {}", path.toUri());
         Assert.assertTrue(Files.exists(path));
@@ -95,8 +87,6 @@ public class FilePathTestCase {
 
     @Test
     public void test_toUri() throws Exception {
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@/filesystem/images/header1.jpg");
         URI uri = URI.create("s3://filesystem/images/header1.jpg");
         Path file = registry.getPath(uri);
         uri = file.toUri();
@@ -120,8 +110,6 @@ public class FilePathTestCase {
 
     @Test
     public void testFilePath() throws Exception {
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@server.jdkxx.org:29000/filesystem/images/header1.jpg");
-        //URI uri = URI.create("s3://tM48ZeS3IEqkM60fZgEF@/filesystem/images/header1.jpg");
         URI uri = URI.create("s3://filesystem/images/");
         Path directory = registry.getPath(uri);
         log.info("directory is {}", directory);
