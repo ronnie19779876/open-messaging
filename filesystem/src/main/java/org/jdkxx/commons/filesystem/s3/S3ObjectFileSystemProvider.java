@@ -2,8 +2,7 @@ package org.jdkxx.commons.filesystem.s3;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.jdkxx.commons.filesystem.FileSystems;
-import org.jdkxx.commons.filesystem.utils.URISupport;
+import org.jdkxx.commons.filesystem.AbstractFileSystemProvider;
 import org.jdkxx.commons.filesystem.config.FileSystemEnvironment;
 import org.jdkxx.commons.filesystem.config.Messages;
 import org.jetbrains.annotations.NotNull;
@@ -16,40 +15,27 @@ import java.net.URI;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.*;
-import java.nio.file.spi.FileSystemProvider;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
-public class S3FileSystemProvider extends FileSystemProvider {
-    private final FileSystems<S3FileSystem> fileSystems = new FileSystems<>(this::createFileSystem);
-    private static final String FILESYSTEM_SCHEME = "s3";
-
-    private S3FileSystem createFileSystem(URI uri, Map<String, ?> env) throws IOException {
-        return new S3FileSystem(this, uri, (FileSystemEnvironment) env);
-    }
-
+public class S3ObjectFileSystemProvider extends AbstractFileSystemProvider<S3ObjectFileSystem> {
     @Override
     public String getScheme() {
-        return FILESYSTEM_SCHEME;
+        return S3_SCHEME;
     }
 
     @Override
-    public FileSystem newFileSystem(URI uri, Map<String, ?> env) throws IOException {
-        // user info must come from the environment map
-        checkURI(uri, false, false);
-        FileSystemEnvironment environment = FileSystemEnvironment.copy(env);
-        String username = environment.getUsername();
-        URI normalizedURI = normalizeWithUsername(uri, username);
-        return fileSystems.add(normalizedURI, environment);
+    protected S3ObjectFileSystem createFileSystem(URI uri, Map<String, ?> env) throws IOException {
+        return new S3ObjectFileSystem(this, uri, (FileSystemEnvironment) env);
     }
 
     @Override
-    public FileSystem getFileSystem(URI uri) {
-        checkURI(uri, true, false);
-        return getExistingFileSystem(uri);
+    protected S3ObjectFileSystem getExistingFileSystem(URI uri) {
+        URI normalizedURI = normalizeWithoutPassword(uri);
+        return fileSystems.get(normalizedURI);
     }
 
     public boolean exists(Path path, LinkOption... options) {
@@ -107,7 +93,6 @@ public class S3FileSystemProvider extends FileSystemProvider {
         if (path.startsWith(File.separator)) {
             path = path.substring(1);
         }
-
         String bucket;
         if (StringUtils.isNoneBlank(uri.getFragment())) {
             bucket = uri.getFragment();
@@ -177,75 +162,19 @@ public class S3FileSystemProvider extends FileSystemProvider {
         toS3FilePath(path).setAttribute(attribute, value, options);
     }
 
-    private S3FilePath toS3FilePath(Path path) {
+    private S3ObjectFilePath toS3FilePath(Path path) {
         Objects.requireNonNull(path);
-        if (path instanceof S3FilePath) {
-            return (S3FilePath) path;
+        if (path instanceof S3ObjectFilePath) {
+            return (S3ObjectFilePath) path;
         }
         throw new ProviderMismatchException();
     }
 
-    private FileSystem getExistingFileSystem(URI uri) {
-        URI normalizedURI = normalizeWithoutPassword(uri);
-        return fileSystems.get(normalizedURI);
-    }
-
-    private URI normalizeWithoutPassword(URI uri) {
-        String userInfo = uri.getUserInfo();
-        if (userInfo == null && uri.getPath() == null && uri.getQuery() == null && uri.getFragment() == null) {
-            // nothing to normalize, return the URI
-            return uri;
-        }
-        String username = null;
-        if (userInfo != null) {
-            int index = userInfo.indexOf(':');
-            username = index == -1 ? userInfo : userInfo.substring(0, index);
-        }
-        // no path, query or fragment
-        return URISupport.create(uri.getScheme(), username, uri.getHost(), uri.getPort(),
-                null, null, null);
-    }
-
-    private URI normalizeWithUsername(URI uri, String username) {
-        if (username == null && uri.getUserInfo() == null && uri.getPath() == null
-                && uri.getQuery() == null && uri.getFragment() == null) {
-            // nothing to normalize or add, return the URI
-            return uri;
-        }
-        // no path, query or fragment
-        return URISupport.create(uri.getScheme(), username, uri.getHost(), uri.getPort(),
-                null, null, null);
-    }
-
-    private void checkURI(URI uri, boolean allowUserInfo, boolean allowPath) {
-        if (!uri.isAbsolute()) {
-            throw Messages.uri().notAbsolute(uri);
-        }
-        if (!getScheme().equalsIgnoreCase(uri.getScheme())) {
-            throw Messages.uri().invalidScheme(uri, getScheme());
-        }
-        if (!allowUserInfo && uri.getUserInfo() != null && !uri.getUserInfo().isEmpty()) {
-            throw Messages.uri().hasUserInfo(uri);
-        }
-        if (uri.isOpaque()) {
-            throw Messages.uri().notHierarchical(uri);
-        }
-        if (!allowPath && uri.getPath() != null && !uri.getPath().isEmpty()) {
-            throw Messages.uri().hasPath(uri);
-        }
-        if (uri.getQuery() != null && !uri.getQuery().isEmpty()) {
-            throw Messages.uri().hasQuery(uri);
-        }
-        //if (uri.getFragment() != null && !uri.getFragment().isEmpty()) {
-        //    throw Messages.uri().hasFragment(uri);
-        //}
-    }
-
     private static final class AttributeView implements AclFileAttributeView, PosixFileAttributeView {
         private final String name;
-        private final S3FilePath path;
+        private final S3ObjectFilePath path;
 
-        private AttributeView(String name, S3FilePath path) {
+        private AttributeView(String name, S3ObjectFilePath path) {
             this.name = Objects.requireNonNull(name);
             this.path = Objects.requireNonNull(path);
         }

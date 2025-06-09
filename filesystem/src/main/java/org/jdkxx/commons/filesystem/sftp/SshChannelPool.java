@@ -1,5 +1,6 @@
-package org.jdkxx.commons.filesystem.s3;
+package org.jdkxx.commons.filesystem.sftp;
 
+import lombok.extern.slf4j.Slf4j;
 import org.jdkxx.commons.filesystem.api.ChannelPool;
 import org.jdkxx.commons.filesystem.api.FileSystemChannel;
 import org.jdkxx.commons.filesystem.config.FileSystemEnvironment;
@@ -8,11 +9,16 @@ import org.jdkxx.commons.filesystem.pool.Pool;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 
-public class S3ChannelPool implements ChannelPool {
-    private final Pool<S3Channel, IOException> pool;
+@Slf4j
+public class SshChannelPool implements ChannelPool {
+    private final Pool<SshChannel, IOException> pool;
 
-    public S3ChannelPool(String endpoint, FileSystemEnvironment environment) throws IOException {
-        this.pool = new S3ChannelPoolBuilder().endpoint(endpoint).build(environment);
+    SshChannelPool(String host, int port, FileSystemEnvironment environment) throws IOException {
+        this.pool = new SshChannelPoolBuilder()
+                .withHost(host)
+                .withPort(port)
+                .withEnvironment(environment)
+                .build();
     }
 
     @Override

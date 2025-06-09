@@ -31,11 +31,11 @@ import java.util.concurrent.FutureTask;
 import static com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
 
 @Slf4j
-public class S3Channel extends PoolingObject<IOException> implements FileSystemChannel {
+public class S3ObjectChannel extends PoolingObject<IOException> implements FileSystemChannel {
     private final AmazonS3 channel;
     private final String bucketName;
 
-    public S3Channel(String host, FileSystemEnvironment environment) {
+    public S3ObjectChannel(String host, FileSystemEnvironment environment) {
         this.bucketName = environment.getBucketName();
         System.setProperty("com.amazonaws.sdk.disableCertChecking", "true");
         System.setProperty("com.amazonaws.services.s3.disableGetObjectMD5Validation", "true");
@@ -153,7 +153,7 @@ public class S3Channel extends PoolingObject<IOException> implements FileSystemC
                     current = current.replace(path, "");
                     if (!current.isEmpty() && current.split("/").length < 2) {
                         FileAttributes attributes = readAttributes(summary.getKey(), false);
-                        FileEntry entry = new S3FileEntry(summary.getKey(), attributes.as(S3ObjectFileAttributes.class));
+                        FileEntry entry = new S3ObjectFileEntry(summary.getKey(), attributes.as(S3ObjectFileAttributes.class));
                         entries.add(entry);
                     }
                 }
@@ -242,7 +242,8 @@ public class S3Channel extends PoolingObject<IOException> implements FileSystemC
                 CanonicalGrantee grantee = new CanonicalGrantee(entry.principal().getName());
                 switch (entry.type()) {
                     case ALLOW:
-                        toPermissions(entry.permissions()).forEach(p -> access.grantPermission(grantee, p));
+                        toPermissions(entry.permissions())
+                                .forEach(p -> access.grantPermission(grantee, p));
                         break;
                     case DENY:
                         access.revokeAllPermissions(grantee);
@@ -333,11 +334,11 @@ public class S3Channel extends PoolingObject<IOException> implements FileSystemC
     }
 
     private static class S3OutputStream extends ByteArrayOutputStream {
-        private final S3Channel channel;
+        private final S3ObjectChannel channel;
         private final String path;
         private boolean flush = false;
 
-        private S3OutputStream(S3Channel channel, String path) {
+        private S3OutputStream(S3ObjectChannel channel, String path) {
             this.channel = channel;
             this.path = path;
         }

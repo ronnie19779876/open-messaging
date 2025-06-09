@@ -19,15 +19,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-public class S3FilePath extends AbstractFilePath {
-    private final S3FileSystem fs;
+public class S3ObjectFilePath extends AbstractFilePath {
+    private final S3ObjectFileSystem fs;
     private final String bucket;
 
-    public S3FilePath(S3FileSystem fs, String path, String bucket) {
+    public S3ObjectFilePath(S3ObjectFileSystem fs, String path, String bucket) {
         this(fs, path, false, bucket);
     }
 
-    private S3FilePath(S3FileSystem fs, String path, boolean normalized, String bucket) {
+    private S3ObjectFilePath(S3ObjectFileSystem fs, String path, boolean normalized, String bucket) {
         super(path, normalized);
         this.fs = Objects.requireNonNull(fs);
         this.bucket = bucket;
@@ -47,7 +47,7 @@ public class S3FilePath extends AbstractFilePath {
         } else if (offsets.length == 0) {
             path = File.separator;
         }
-        return new S3FilePath(fs, path, false, bucket);
+        return new S3ObjectFilePath(fs, path, false, bucket);
     }
 
     @Override
@@ -77,7 +77,7 @@ public class S3FilePath extends AbstractFilePath {
 
     @Override
     public @NotNull Path toAbsolutePath() {
-        return new S3FilePath(fs, this.path(), false, bucket);
+        return new S3ObjectFilePath(fs, this.path(), false, bucket);
     }
 
     @Override
@@ -94,7 +94,7 @@ public class S3FilePath extends AbstractFilePath {
 
     @Override
     protected FilePath createPath(String path) {
-        return new S3FilePath(fs, path, false, bucket);
+        return new S3ObjectFilePath(fs, path, false, bucket);
     }
 
     @Override
@@ -123,7 +123,7 @@ public class S3FilePath extends AbstractFilePath {
         if (other == null || getFileSystem() != other.getFileSystem()) {
             return false;
         }
-        return fs.isSameFile(this, (S3FilePath) other);
+        return fs.isSameFile(this, (S3ObjectFilePath) other);
     }
 
     boolean exists() {
@@ -200,11 +200,11 @@ public class S3FilePath extends AbstractFilePath {
         fs.delete(this);
     }
 
-    void copy(S3FilePath target, CopyOption... options) throws IOException {
+    void copy(S3ObjectFilePath target, CopyOption... options) throws IOException {
         fs.copy(this, target, options);
     }
 
-    void move(S3FilePath target, CopyOption... options) throws IOException {
+    void move(S3ObjectFilePath target, CopyOption... options) throws IOException {
         fs.move(this, target, options);
     }
 }

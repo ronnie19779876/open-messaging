@@ -1,10 +1,7 @@
 package org.jdkxx.commons.filesystem.s3;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jdkxx.commons.filesystem.AbstractDirectoryStream;
-import org.jdkxx.commons.filesystem.CopyOptions;
-import org.jdkxx.commons.filesystem.FileEntry;
-import org.jdkxx.commons.filesystem.FilePath;
+import org.jdkxx.commons.filesystem.*;
 import org.jdkxx.commons.filesystem.api.ChannelPool;
 import org.jdkxx.commons.filesystem.api.FileAttributes;
 import org.jdkxx.commons.filesystem.api.FileSystemChannel;
@@ -14,7 +11,6 @@ import org.jdkxx.commons.filesystem.config.OpenOptions;
 import org.jdkxx.commons.filesystem.principal.DefaultGroupPrincipal;
 import org.jdkxx.commons.filesystem.principal.DefaultUserPrincipal;
 import org.jdkxx.commons.filesystem.utils.LinkOptionSupport;
-import org.jdkxx.commons.filesystem.utils.PathMatcherSupport;
 import org.jdkxx.commons.filesystem.utils.URISupport;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,34 +26,19 @@ import java.nio.file.spi.FileSystemProvider;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
 
 @Slf4j
-public class S3FileSystem extends FileSystem {
-    private static final String CURRENT_DIR = ".";
-    private static final String PARENT_DIR = "..";
-    private final FileSystemProvider provider;
-    private final URI uri;
+public class S3ObjectFileSystem extends AbstractFileSystem {
+    private final Iterable<Path> rootDirectories;
     private final ChannelPool pool;
-    private final AtomicBoolean opened = new AtomicBoolean(true);
     private final AtomicBoolean readOnly = new AtomicBoolean(false);
 
-    S3FileSystem(FileSystemProvider provider,
-                 URI uri,
-                 FileSystemEnvironment environment) throws IOException {
-        this.provider = Objects.requireNonNull(provider);
-        this.uri = Objects.requireNonNull(uri);
-        this.pool = new S3ChannelPool(uri.getHost(), environment);
-    }
-
-    @Override
-    public FileSystemProvider provider() {
-        return provider;
-    }
-
-    @Override
-    public boolean isOpen() {
-        return opened.get();
+    S3ObjectFileSystem(FileSystemProvider provider,
+                       URI uri,
+                       FileSystemEnvironment environment) throws IOException {
+        super(provider, uri);
+        this.pool = new S3ObjectChannelPool(uri.getHost(), environment);
+        this.rootDirectories = Collections.singleton(new S3ObjectFilePath(this, File.separator, environment.getBucketName()));
     }
 
     @Override
@@ -66,13 +47,8 @@ public class S3FileSystem extends FileSystem {
     }
 
     @Override
-    public String getSeparator() {
-        return File.separator;
-    }
-
-    @Override
     public Iterable<Path> getRootDirectories() {
-        return Collections.singleton(new S3FilePath(this, "", ""));
+        return rootDirectories;
     }
 
     @Override
@@ -81,13 +57,7 @@ public class S3FileSystem extends FileSystem {
             first = first.substring(1);
         }
         String bucket = more.length > 0 ? more[0] : "";
-        return new S3FilePath(this, first, bucket);
-    }
-
-    @Override
-    public PathMatcher getPathMatcher(String syntaxAndPattern) {
-        final Pattern pattern = PathMatcherSupport.toPattern(syntaxAndPattern);
-        return path -> pattern.matcher(path.toString()).matches();
+        return new S3ObjectFilePath(this, first, bucket);
     }
 
     @Override
@@ -96,28 +66,12 @@ public class S3FileSystem extends FileSystem {
     }
 
     @Override
-    public void close() throws IOException {
-        if (opened.getAndSet(false)) {
-            pool.close();
-        }
-    }
-
-    @Override
-    public Iterable<FileStore> getFileStores() {
-        throw Messages.unsupportedOperation(FileSystem.class, "getFileStores");
-    }
-
-    @Override
     public Set<String> supportedFileAttributeViews() {
         throw Messages.unsupportedOperation(FileSystem.class, "supportedFileAttributeViews");
     }
 
     @Override
-    public WatchService newWatchService() throws IOException {
-        throw Messages.unsupportedOperation(FileSystem.class, "newWatchService");
-    }
-
-    URI toUri(String path) {
+    protected URI toUri(String path) {
         int pos = path.indexOf(File.separator);
         String bucket = path.substring(0, pos);
         return URISupport.create(uri.getScheme(), uri.getUserInfo(), uri.getHost(), uri.getPort(),
@@ -125,32 +79,32 @@ public class S3FileSystem extends FileSystem {
                 null, bucket);
     }
 
-    boolean exists(S3FilePath path) throws IOException {
+    boolean exists(S3ObjectFilePath path) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             return channel.exists(path.path());
         }
     }
 
-    InputStream newInputStream(S3FilePath path, OpenOption... options) throws IOException {
+    InputStream newInputStream(S3ObjectFilePath path, OpenOption... options) throws IOException {
         OpenOptions openOptions = OpenOptions.forNewInputStream(options);
         try (FileSystemChannel channel = pool.get()) {
             return newInputStream(channel, path, openOptions);
         }
     }
 
-    private InputStream newInputStream(FileSystemChannel channel, S3FilePath path, OpenOptions options) throws IOException {
+    private InputStream newInputStream(FileSystemChannel channel, S3ObjectFilePath path, OpenOptions options) throws IOException {
         assert options.read;
         return channel.newInputStream(path.path(), options);
     }
 
-    OutputStream newOutputStream(S3FilePath path, OpenOption... options) throws IOException {
+    OutputStream newOutputStream(S3ObjectFilePath path, OpenOption... options) throws IOException {
         OpenOptions openOptions = OpenOptions.forNewOutputStream(options);
         try (FileSystemChannel channel = pool.get()) {
             return channel.newOutputStream(path.path(), openOptions);
         }
     }
 
-    SeekableByteChannel newByteChannel(S3FilePath path,
+    SeekableByteChannel newByteChannel(S3ObjectFilePath path,
                                        Set<? extends OpenOption> options,
                                        FileAttribute<?>... attrs) throws IOException {
         if (attrs.length > 0) {
@@ -162,48 +116,31 @@ public class S3FileSystem extends FileSystem {
                 FileAttributes attributes = findAttributes(channel, path);
                 long size = attributes != null ? attributes.getSize() : 0;
                 InputStream is = newInputStream(channel, path, openOptions);
-                return S3FileChannel.builder()
+                return SeekableFileByteChannel.builder()
                         .inputStream(is)
                         .size(size)
                         .build();
             }
             OutputStream out = newOutputStream(path, options.toArray(new OpenOption[]{}));
-            return S3FileChannel.builder()
+            return SeekableFileByteChannel.builder()
                     .outputStream(out)
                     .position(0)
                     .build();
         }
     }
 
-    DirectoryStream<Path> newDirectoryStream(S3FilePath path,
+    DirectoryStream<Path> newDirectoryStream(S3ObjectFilePath path,
                                              DirectoryStream.Filter<? super Path> filter) throws IOException {
         if (!path.isDirectory()) {
             throw new NotDirectoryException("Path - [" + path + "] not a folder.");
         }
         try (FileSystemChannel channel = pool.get()) {
-            List<FileEntry> entries = channel.listFiles(path.path());
-            boolean isDirectory = false;
-            for (Iterator<FileEntry> i = entries.iterator(); i.hasNext(); ) {
-                FileEntry entry = i.next();
-                String filename = entry.getFileName();
-                if (CURRENT_DIR.equals(filename)) {
-                    isDirectory = true;
-                    i.remove();
-                } else if (PARENT_DIR.equals(filename)) {
-                    i.remove();
-                }
-            }
-            if (!isDirectory) {
-                FileAttributes attributes = channel.readAttributes(path.path(), false);
-                if (!attributes.isDir()) {
-                    throw new NotDirectoryException(path.path());
-                }
-            }
+            List<FileEntry> entries = listFileEntry(channel, path.path());
             return new S3DirectoryStream(path, entries, filter);
         }
     }
 
-    void createDirectory(S3FilePath path, FileAttribute<?>... attrs) throws IOException {
+    void createDirectory(S3ObjectFilePath path, FileAttribute<?>... attrs) throws IOException {
         if (attrs.length > 0) {
             throw Messages.fileSystemProvider().unsupportedCreateFileAttribute(attrs[0].name());
         }
@@ -212,21 +149,22 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    void delete(S3FilePath path) throws IOException {
+    void delete(S3ObjectFilePath path) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             channel.delete(path.path());
         }
     }
 
-    PosixFileAttributes readAttributes(S3FilePath path, LinkOption... options) throws IOException {
+    @Override
+    protected PosixFileAttributes readAttributes(Path path, LinkOption... options) throws IOException {
         boolean followLinks = LinkOptionSupport.followLinks(options);
         try (FileSystemChannel channel = pool.get()) {
-            FileAttributes attributes = channel.readAttributes(path.path(), followLinks);
+            FileAttributes attributes = channel.readAttributes(((S3ObjectFilePath) path).path(), followLinks);
             return new S3FileAttributes(attributes);
         }
     }
 
-    void copy(S3FilePath source, S3FilePath target, CopyOption... options) throws IOException {
+    void copy(S3ObjectFilePath source, S3ObjectFilePath target, CopyOption... options) throws IOException {
         boolean sameFileSystem = haveSameFileSystem(source, target);
         CopyOptions copyOptions = CopyOptions.forCopy(options);
         try (FileSystemChannel channel = pool.get()) {
@@ -261,20 +199,7 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    /*
-    S3FilePath toRealPath(S3FilePath path, LinkOption... options) throws IOException {
-        return (S3FilePath) toAbsolutePath(path).normalize();
-    }
-
-    S3FilePath toAbsolutePath(S3FilePath path) {
-        if (path.isAbsolute()) {
-            return path;
-        }
-        return new S3FilePath(this, path.path());
-    }
-     */
-
-    void move(S3FilePath source, S3FilePath target, CopyOption... options) throws IOException {
+    void move(S3ObjectFilePath source, S3ObjectFilePath target, CopyOption... options) throws IOException {
         boolean sameFileSystem = haveSameFileSystem(source, target);
         CopyOptions copyOptions = CopyOptions.forMove(sameFileSystem, options);
         try (FileSystemChannel channel = pool.get()) {
@@ -309,7 +234,7 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    boolean isSameFile(S3FilePath path, S3FilePath other) throws IOException {
+    boolean isSameFile(S3ObjectFilePath path, S3ObjectFilePath other) throws IOException {
         if (!haveSameFileSystem(path, other)) {
             return false;
         }
@@ -319,7 +244,7 @@ public class S3FileSystem extends FileSystem {
         return path.toRealPath().equals(other.toRealPath());
     }
 
-    void checkAccess(S3FilePath path, AccessMode... modes) throws IOException {
+    void checkAccess(S3ObjectFilePath path, AccessMode... modes) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             FileAttributes attributes = channel.readAttributes(path.path(), true);
             for (AccessMode mode : modes) {
@@ -330,13 +255,13 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    void setAccessControlList(S3FilePath path, List<AclEntry> acl) throws IOException {
+    void setAccessControlList(S3ObjectFilePath path, List<AclEntry> acl) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             channel.chmod(path.path(), acl);
         }
     }
 
-    void setTimes(S3FilePath path, FileTime lastModifiedTime, FileTime lastAccessTime, FileTime createTime) throws IOException {
+    void setTimes(S3ObjectFilePath path, FileTime lastModifiedTime, FileTime lastAccessTime, FileTime createTime) throws IOException {
         if (path.isDirectory()) {
             throw new IllegalArgumentException("Path - [" + path + "] is a directory, expected a file path.");
         }
@@ -352,43 +277,43 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    void setLastModifiedTime(S3FilePath path, FileTime lastModifiedTime, boolean followLinks) throws IOException {
+    void setLastModifiedTime(S3ObjectFilePath path, FileTime lastModifiedTime, boolean followLinks) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             if (followLinks) {
-                path = (S3FilePath) path.toRealPath();
+                path = (S3ObjectFilePath) path.toRealPath();
             }
             // times are in seconds
             channel.setMtime(path.path(), lastModifiedTime.to(TimeUnit.MILLISECONDS));
         }
     }
 
-    void setLastAccessTime(S3FilePath path, FileTime lastModifiedTime, boolean followLinks) throws IOException {
+    void setLastAccessTime(S3ObjectFilePath path, FileTime lastModifiedTime, boolean followLinks) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             if (followLinks) {
-                path = (S3FilePath) path.toRealPath();
+                path = (S3ObjectFilePath) path.toRealPath();
             }
             // times are in seconds
             channel.setAtime(path.path(), lastModifiedTime.to(TimeUnit.MILLISECONDS));
         }
     }
 
-    void setCreateTime(S3FilePath path, FileTime createTime, boolean followLinks) throws IOException {
+    void setCreateTime(S3ObjectFilePath path, FileTime createTime, boolean followLinks) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             if (followLinks) {
-                path = (S3FilePath) path.toRealPath();
+                path = (S3ObjectFilePath) path.toRealPath();
             }
             // times are in seconds
             channel.setCtime(path.path(), createTime.to(TimeUnit.MILLISECONDS));
         }
     }
 
-    void setOwner(S3FilePath path, UserPrincipal owner) throws IOException {
+    void setOwner(S3ObjectFilePath path, UserPrincipal owner) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             channel.chown(path.path(), owner.getName());
         }
     }
 
-    void setPermissions(S3FilePath path, Set<PosixFilePermission> permissions) throws IOException {
+    void setPermissions(S3ObjectFilePath path, Set<PosixFilePermission> permissions) throws IOException {
         try (FileSystemChannel channel = pool.get()) {
             UserPrincipal owner = path.readAttributes().owner();
             AclEntry.Builder builder = AclEntry.newBuilder().setType(AclEntryType.ALLOW)
@@ -420,7 +345,7 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    private boolean haveSameFileSystem(S3FilePath path, S3FilePath other) {
+    private boolean haveSameFileSystem(S3ObjectFilePath path, S3ObjectFilePath other) {
         return path.getFileSystem() == other.getFileSystem();
     }
 
@@ -428,7 +353,7 @@ public class S3FileSystem extends FileSystem {
                                        FilePath source,
                                        FileAttributes sourceAttributes,
                                        FilePath target, CopyOptions options) throws IOException {
-        S3FileSystem targetFileSystem = (S3FileSystem) target.getFileSystem();
+        S3ObjectFileSystem targetFileSystem = (S3ObjectFileSystem) target.getFileSystem();
         try (FileSystemChannel targetChannel = targetFileSystem.pool.getOrCreate()) {
             FileAttributes targetAttributes = findAttributes(targetChannel, target);
             if (targetAttributes != null) {
@@ -455,130 +380,18 @@ public class S3FileSystem extends FileSystem {
         }
     }
 
-    private void copyFile(FileSystemChannel sourceChannel,
-                          FilePath source,
-                          FileSystemChannel targetChannel,
-                          FilePath target,
-                          CopyOptions options) throws IOException {
-        OpenOptions inOptions = OpenOptions.forNewInputStream(options.toOpenOptions(StandardOpenOption.READ));
-        OpenOptions outOptions = OpenOptions
-                .forNewOutputStream(options.toOpenOptions(StandardOpenOption.WRITE, StandardOpenOption.CREATE));
-        try (InputStream in = sourceChannel.newInputStream(source.path(), inOptions)) {
-            targetChannel.storeFile(target.path(), in, outOptions.options);
-        }
-    }
-
-    private static final Set<String> BASIC_ATTRIBUTES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "basic:lastModifiedTime", "basic:lastAccessTime", "basic:creationTime", "basic:size",
-            "basic:isRegularFile", "basic:isDirectory", "basic:isSymbolicLink", "basic:isOther", "basic:fileKey")));
-
-    private static final Set<String> OWNER_ATTRIBUTES =
-            Collections.unmodifiableSet(new HashSet<>(Collections.singletonList("owner:owner")));
-
-    private static final Set<String> POSIX_ATTRIBUTES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-            "posix:lastModifiedTime", "posix:lastAccessTime", "posix:creationTime", "posix:size",
-            "posix:isRegularFile", "posix:isDirectory", "posix:isSymbolicLink", "posix:isOther", "posix:fileKey",
-            "posix:owner", "posix:group", "posix:permissions")));
-
-    private static final Set<String> SUPPORTED_FILE_ATTRIBUTE_VIEWS = Collections
-            .unmodifiableSet(new HashSet<>(Arrays.asList("basic", "owner", "posix")));
-
-    Map<String, Object> readAttributes(S3FilePath path, String attributes, LinkOption... options) throws IOException {
-        String view;
-        int pos = attributes.indexOf(':');
-        if (pos == -1) {
-            view = "basic";
-            attributes = "basic:" + attributes;
-        } else {
-            view = attributes.substring(0, pos);
-        }
-        if (!SUPPORTED_FILE_ATTRIBUTE_VIEWS.contains(view)) {
-            throw Messages.fileSystemProvider().unsupportedFileAttributeView(view);
-        }
-        Set<String> allowedAttributes;
-        if (attributes.startsWith("basic:")) {
-            allowedAttributes = BASIC_ATTRIBUTES;
-        } else if (attributes.startsWith("owner:")) {
-            allowedAttributes = OWNER_ATTRIBUTES;
-        } else if (attributes.startsWith("posix:")) {
-            allowedAttributes = POSIX_ATTRIBUTES;
-        } else {
-            // should not occur
-            throw Messages.fileSystemProvider().unsupportedFileAttributeView(attributes.substring(0, attributes.indexOf(':')));
-        }
-        Map<String, Object> result = getAttributeMap(attributes, allowedAttributes);
-        PosixFileAttributes posixAttributes = readAttributes(path, options);
-        for (Map.Entry<String, Object> entry : result.entrySet()) {
-            switch (entry.getKey()) {
-                case "basic:lastModifiedTime":
-                case "posix:lastModifiedTime":
-                    entry.setValue(posixAttributes.lastModifiedTime());
-                    break;
-                case "basic:lastAccessTime":
-                case "posix:lastAccessTime":
-                    entry.setValue(posixAttributes.lastAccessTime());
-                    break;
-                case "basic:creationTime":
-                case "posix:creationTime":
-                    entry.setValue(posixAttributes.creationTime());
-                    break;
-                case "basic:size":
-                case "posix:size":
-                    entry.setValue(posixAttributes.size());
-                    break;
-                case "basic:isRegularFile":
-                case "posix:isRegularFile":
-                    entry.setValue(posixAttributes.isRegularFile());
-                    break;
-                case "basic:isDirectory":
-                case "posix:isDirectory":
-                    entry.setValue(posixAttributes.isDirectory());
-                    break;
-                case "basic:isSymbolicLink":
-                case "posix:isSymbolicLink":
-                    entry.setValue(posixAttributes.isSymbolicLink());
-                    break;
-                case "basic:isOther":
-                case "posix:isOther":
-                    entry.setValue(posixAttributes.isOther());
-                    break;
-                case "basic:fileKey":
-                case "posix:fileKey":
-                    entry.setValue(posixAttributes.fileKey());
-                    break;
-                case "owner:owner":
-                case "posix:owner":
-                    entry.setValue(posixAttributes.owner());
-                    break;
-                case "posix:group":
-                    entry.setValue(posixAttributes.group());
-                    break;
-                case "posix:permissions":
-                    entry.setValue(posixAttributes.permissions());
-                    break;
-                default:
-                    // should not occur
-                    throw new IllegalStateException("unexpected attribute name: " + entry.getKey());
-            }
-        }
-        return result;
+    Map<String, Object> readAttributes(S3ObjectFilePath path, String attributes, LinkOption... options) throws IOException {
+        return super.readAttributes(path, attributes, options);
     }
 
     @SuppressWarnings("unchecked")
-    void setAttribute(S3FilePath path, String attribute, Object value, LinkOption... options) throws IOException {
-        String view;
-        int pos = attribute.indexOf(':');
-        if (pos == -1) {
-            view = "basic";
-            attribute = "basic:" + attribute;
-        } else {
-            view = attribute.substring(0, pos);
-        }
-        if (!"basic".equals(view) && !"owner".equals(view) && !"posix".equals(view)) {
-            throw Messages.fileSystemProvider().unsupportedFileAttributeView(view);
+    void setAttribute(S3ObjectFilePath path, String attributes, Object value, LinkOption... options) throws IOException {
+        String prefix = getViewPrefix(attributes);
+        if (!attributes.startsWith(prefix)) {
+            attributes = prefix + ":" + attributes;
         }
         boolean followLinks = LinkOptionSupport.followLinks(options);
-        switch (attribute) {
+        switch (attributes) {
             case "basic:lastModifiedTime":
             case "posix:lastModifiedTime":
                 setLastModifiedTime(path, (FileTime) value, followLinks);
@@ -603,39 +416,16 @@ public class S3FileSystem extends FileSystem {
                 setPermissions(path, permissions);
                 break;
             default:
-                throw Messages.fileSystemProvider().unsupportedFileAttribute(attribute);
+                throw Messages.fileSystemProvider().unsupportedFileAttribute(attributes);
         }
-    }
-
-    private Map<String, Object> getAttributeMap(String attributes, Set<String> allowedAttributes) {
-        int indexOfColon = attributes.indexOf(':');
-        String prefix = attributes.substring(0, indexOfColon + 1);
-        attributes = attributes.substring(indexOfColon + 1);
-
-        String[] attributeList = attributes.split(",");
-        Map<String, Object> result = new HashMap<>(allowedAttributes.size());
-
-        for (String attribute : attributeList) {
-            String prefixedAttribute = prefix + attribute;
-            if (allowedAttributes.contains(prefixedAttribute)) {
-                result.put(prefixedAttribute, null);
-            } else if ("*".equals(attribute)) {
-                for (String s : allowedAttributes) {
-                    result.put(s, null);
-                }
-            } else {
-                throw Messages.fileSystemProvider().unsupportedFileAttribute(attribute);
-            }
-        }
-        return result;
     }
 
     private static final class S3DirectoryStream extends AbstractDirectoryStream<Path> {
-        private final S3FilePath path;
+        private final S3ObjectFilePath path;
         private final List<FileEntry> entries;
         private Iterator<FileEntry> iterator;
 
-        private S3DirectoryStream(S3FilePath path, List<FileEntry> entries, Filter<? super Path> filter) {
+        private S3DirectoryStream(S3ObjectFilePath path, List<FileEntry> entries, Filter<? super Path> filter) {
             super(filter);
             this.path = path;
             this.entries = entries;
@@ -649,7 +439,7 @@ public class S3FileSystem extends FileSystem {
         @Override
         protected Path getNext() throws IOException {
             return iterator.hasNext() ?
-                    new S3FilePath((S3FileSystem) path.getFileSystem(), iterator.next().getLongName(), path.bucket()) : null;
+                    new S3ObjectFilePath((S3ObjectFileSystem) path.getFileSystem(), iterator.next().getLongName(), path.bucket()) : null;
         }
     }
 

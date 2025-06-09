@@ -27,7 +27,13 @@ public interface FileSystemChannel extends Closeable {
 
     void chown(String path, String id) throws IOException;
 
-    void chmod(String path, List<AclEntry> acl) throws IOException;
+    default void chmod(String path, List<AclEntry> acl) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    default void chmod(String path, int permissions) throws IOException {
+        throw new UnsupportedOperationException();
+    }
 
     void delete(String path, boolean isDirectory) throws IOException;
 
@@ -44,6 +50,18 @@ public interface FileSystemChannel extends Closeable {
     void setAtime(String path, long time) throws IOException;
 
     void setCtime(String path, long time) throws IOException;
+
+    default String pwd() throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    default String readSymbolicLink(String path) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    default void changeGroup(String path, String gid) throws IOException {
+        throw new UnsupportedOperationException();
+    }
 
     default <T> T as(Class<T> type) {
         return type.cast(this);

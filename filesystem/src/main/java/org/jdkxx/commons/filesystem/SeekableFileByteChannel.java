@@ -1,4 +1,4 @@
-package org.jdkxx.commons.filesystem.s3;
+package org.jdkxx.commons.filesystem;
 
 import org.jdkxx.commons.filesystem.config.Messages;
 
@@ -9,12 +9,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Objects;
 
-public class S3FileChannel implements SeekableByteChannel {
+public class SeekableFileByteChannel implements SeekableByteChannel {
     private final Channel channel;
     private final long size;
     private long position;
 
-    private S3FileChannel(Channel channel, long size, long position) {
+    private SeekableFileByteChannel(Channel channel, long size, long position) {
         this.channel = channel;
         this.size = size;
         this.position = position;
@@ -104,7 +104,7 @@ public class S3FileChannel implements SeekableByteChannel {
             return this;
         }
 
-        public S3FileChannel build() {
+        public SeekableFileByteChannel build() {
             Channel channel = null;
             if (is != null) {
                 channel = Channels.newChannel(is);
@@ -114,7 +114,7 @@ public class S3FileChannel implements SeekableByteChannel {
             if (channel == null) {
                 throw new IllegalArgumentException("Channel is null");
             }
-            return new S3FileChannel(channel, size, position);
+            return new SeekableFileByteChannel(channel, size, position);
         }
     }
 }

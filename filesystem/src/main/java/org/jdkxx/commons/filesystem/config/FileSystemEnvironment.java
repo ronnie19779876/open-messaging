@@ -1,5 +1,6 @@
 package org.jdkxx.commons.filesystem.config;
 
+import com.jcraft.jsch.Proxy;
 import org.jdkxx.commons.configuration.ConfigOption;
 import org.jdkxx.commons.configuration.Configuration;
 import org.jdkxx.commons.filesystem.pool.PoolConfig;
@@ -47,12 +48,38 @@ public class FileSystemEnvironment implements Map<String, Object> {
         return value != null ? String.valueOf(value) : null;
     }
 
+    public String getIdentity() {
+        Object value = get(IDENTITIES);
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    public String getKnownHosts() {
+        Object value = get(KNOWN_HOSTS);
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    public Proxy getProxy() {
+        Object value = get(PROXY);
+        if (value instanceof Proxy) {
+            return (Proxy) value;
+        }
+        return null;
+    }
+
     public PoolConfig getPoolConfig() {
         Object value = get(POOL_CONFIG);
         if (value instanceof PoolConfig) {
             return (PoolConfig) value;
         }
         return null;
+    }
+
+    public Properties getConfig() {
+        Object value = get(CONFIG);
+        if (value instanceof Properties) {
+            return (Properties) value;
+        }
+        return new Properties();
     }
 
     public String getProtocol() {
@@ -67,6 +94,14 @@ public class FileSystemEnvironment implements Map<String, Object> {
 
     public String endpoint(String host) {
         return String.format("%s:%s", host, getPort());
+    }
+
+    public int getConnectTimeout() {
+        return (Integer) get(CONNECT_TIMEOUT);
+    }
+
+    public int getTimeout() {
+        return (Integer) get(TIMEOUT);
     }
 
     @SuppressWarnings("unchecked")

@@ -1,1 +1,2 @@
-org.jdkxx.commons.filesystem.s3.S3FileSystemProvider
+org.jdkxx.commons.filesystem.sftp.SftpFileSystemProvider
+org.jdkxx.commons.filesystem.s3.S3ObjectFileSystemProvider

@@ -203,6 +203,11 @@ public abstract class AbstractFilePath extends FilePath {
         return this.path;
     }
 
+    public final String fileName() {
+        initOffsets();
+        return offsets.length == 0 ? "" : nameAt(offsets.length - 1);
+    }
+
     @Override
     public int compareTo(@NotNull Path other) {
         Objects.requireNonNull(other);
